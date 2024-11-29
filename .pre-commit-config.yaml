@@ -1,0 +1,40 @@
+repos:
+  # Basic code quality checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace         # Removes trailing whitespace from lines
+      - id: end-of-file-fixer           # Ensures the file ends with a newline
+      - id: check-added-large-files     # Warns about large files being committed
+      - id: check-yaml                  # Validates the syntax of YAML files
+
+  # Code formatter (Black)
+  - repo: https://github.com/psf/black
+    rev: 23.9.1
+    hooks:
+      - id: black                       # Automatically formats Python code
+
+  # Import sorting tool (isort)
+  - repo: https://github.com/pre-commit/mirrors-isort
+    rev: main
+    hooks:
+      - id: isort                       # Automatically sorts Python imports
+
+  # Code style checks (Flake8)
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8                      # Ensures compliance with PEP8
+        args: [--max-line-length=88]    # Sets max line length to 88 (consistent with Black)
+
+  # # Static type checking (mypy)
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.5.1
+  #   hooks:
+  #     - id: mypy                        # Checks for type safety in Python code
+
+  # Security checks
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets              # Detects sensitive information like passwords or API keys

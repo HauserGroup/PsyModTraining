@@ -1,6 +1,6 @@
 # %%
-import re
 import json
+import re
 
 
 def parse_pihkal(file_path):

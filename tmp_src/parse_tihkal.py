@@ -1,6 +1,6 @@
 # %%
-import re
 import json
+import re
 
 # %%
 # txt_file = "../data/reports/Tihkal_djvu_clean_example.txt"
