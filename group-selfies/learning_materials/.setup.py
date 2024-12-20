@@ -15,10 +15,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/aspuru-guzik-group/group-selfies",
     packages=setuptools.find_packages(),
-    package_data = {
-        '': ['*'],
-        'test': ['*.txt']
-    },
+    package_data={"": ["*"], "test": ["*.txt"]},
     classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.5",
@@ -29,11 +26,11 @@ setuptools.setup(
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.5',
+    python_requires=">=3.5",
     install_requires=[
-        'networkx',
-        'tqdm',
-        'rdkit',
-        'global_chem',
-    ]
+        "networkx",
+        "tqdm",
+        "rdkit",
+        "global_chem",
+    ],
 )

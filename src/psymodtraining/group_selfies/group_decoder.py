@@ -1,19 +1,33 @@
+import re
+from collections import defaultdict
 from itertools import chain
-from group_selfies.grammar_rules import (
+
+from rdkit import Chem
+
+from psymodtraining.group_selfies.bond_constraints import get_bonding_capacity
+from psymodtraining.group_selfies.constants import (
+    BOND_DIR,
+    INVERT_DIR,
+    NEGATIVE_RING_SYMBOL,
+    POP_SYMBOL,
+)
+from psymodtraining.group_selfies.grammar_rules import (
+    bond_char_to_order,
+    get_index_from_selfies,
     next_atom_state,
     next_branch_state,
     next_ring_state,
+    process_atom_symbol,
     process_branch_symbol,
     process_ring_symbol,
-    get_index_from_selfies,
-    process_atom_symbol,
-    bond_char_to_order
 )
+from psymodtraining.group_selfies.utils.selfies_utils import split_selfies
+
 
 class DecoderError(Exception):
     pass
 
-from group_selfies.utils.selfies_utils import split_selfies
+
 def _tokenize_selfies(selfies):
     if isinstance(selfies, str):
         symbol_iter = split_selfies(selfies)
@@ -30,18 +44,11 @@ def _tokenize_selfies(selfies):
     except ValueError as err:
         raise DecoderError(str(err)) from None
 
+
 def _raise_decoder_error(selfies, invalid_symbol):
-    err_msg = "invalid symbol '{}'\n\tSELFIES: {}".format(
-        invalid_symbol, selfies
-    )
+    err_msg = "invalid symbol '{}'\n\tSELFIES: {}".format(invalid_symbol, selfies)
     raise DecoderError(err_msg)
 
-from group_selfies.group_mol_graph import Atom, MolecularGraph
-import re
-from rdkit import Chem, RDLogger
-from group_selfies.constants import POP_SYMBOL, NEGATIVE_RING_SYMBOL, BOND_DIR, INVERT_DIR
-from group_selfies.bond_constraints import get_bonding_capacity
-from collections import defaultdict
 
 def _read_index_from_selfies(symbol_iter, n_symbols):
     index_symbols = []
@@ -55,12 +62,13 @@ def _read_index_from_selfies(symbol_iter, n_symbols):
             index_symbols.append(None)
     return get_index_from_selfies(*index_symbols)
 
+
 def parse_ring_length(symbol_iter, n_symbols):
     try:
         next_one = next(symbol_iter)
         if next_one == POP_SYMBOL:
             return None
-        
+
         negative_ring = False
         if next_one == NEGATIVE_RING_SYMBOL:
             Q = _read_index_from_selfies(symbol_iter, n_symbols)
@@ -68,13 +76,13 @@ def parse_ring_length(symbol_iter, n_symbols):
                 return None
             negative_ring = True
         else:
-            Q = _read_index_from_selfies(
-                chain([next_one], symbol_iter), n_symbols)
+            Q = _read_index_from_selfies(chain([next_one], symbol_iter), n_symbols)
             if Q is None:
                 return None
         return Q, negative_ring
     except StopIteration:
         return None
+
 
 def update_member_idxs(member_idxs, attachment_point_idx):
     new_member_idxs = []
@@ -84,10 +92,11 @@ def update_member_idxs(member_idxs, attachment_point_idx):
         elif i == attachment_point_idx:
             new_member_idxs.append(None)
         elif i > attachment_point_idx:
-            new_member_idxs.append(idx-1)
+            new_member_idxs.append(idx - 1)
         else:
             new_member_idxs.append(idx)
     return new_member_idxs
+
 
 class Counter:
     def __init__(self, value):
@@ -98,6 +107,7 @@ class Counter:
         self.value += 1
         return old
 
+
 def find_next_available(current_idx, rel_idx, member_idxs, attachment_points):
     current = (current_idx + rel_idx) % len(attachment_points)
     for shift in range(len(attachment_points)):
@@ -106,30 +116,36 @@ def find_next_available(current_idx, rel_idx, member_idxs, attachment_points):
             return inner
     return None
 
+
 bond_types = {
-        1: Chem.rdchem.BondType.SINGLE,
-        2: Chem.rdchem.BondType.DOUBLE,
-        3: Chem.rdchem.BondType.TRIPLE,
-    }
+    1: Chem.rdchem.BondType.SINGLE,
+    2: Chem.rdchem.BondType.DOUBLE,
+    3: Chem.rdchem.BondType.TRIPLE,
+}
+
 
 def set_id(atom, idx):
-    if atom.HasProp('id'):
-        atom.SetProp('id', f"{atom.GetProp('id')},{idx}")
+    if atom.HasProp("id"):
+        atom.SetProp("id", f"{atom.GetProp('id')},{idx}")
     else:
-        atom.SetProp('id', str(idx))
+        atom.SetProp("id", str(idx))
 
 
 _exhausted = object()
-def selfies_to_graph_iterative(grammar, 
-                                symbol_iter, 
-                                selfies=None,
-                                rings=None, 
-                                dummy_counter=None, 
-                                place_from_idx=None, 
-                                inverse_place=None,
-                                previous_att_idx=None, 
-                                group_atom=None,
-                                verbose=False):
+
+
+def selfies_to_graph_iterative(
+    grammar,
+    symbol_iter,
+    selfies=None,
+    rings=None,
+    dummy_counter=None,
+    place_from_idx=None,
+    inverse_place=None,
+    previous_att_idx=None,
+    group_atom=None,
+    verbose=False,
+):
     mol = Chem.RWMol()
     stack = [(None, 0, False)]
     while (symbol := next(symbol_iter, _exhausted)) != _exhausted:
@@ -149,7 +165,7 @@ def selfies_to_graph_iterative(grammar,
             if prev != -1:
                 # Case 0: Normal state
                 if ":" == symbol[1]:
-                    # Subcase 0.0: Group symbol (e.g. [:benzene]) 
+                    # Subcase 0.0: Group symbol (e.g. [:benzene])
                     absolute = False
                     group_idx = -1
                     start_idx = 2
@@ -159,9 +175,9 @@ def selfies_to_graph_iterative(grammar,
                     # probably inefficient
                     # maybe do this manually instead of using regex
                     remaining = symbol[2:]
-                    idx_match = re.search(r'\d+', remaining)
-                    dir_match = re.search(r'[\\/]', remaining)
-                    order_match = re.search(r'[#\=\-]', remaining)
+                    idx_match = re.search(r"\d+", remaining)
+                    dir_match = re.search(r"[\\/]", remaining)
+                    order_match = re.search(r"[#\=\-]", remaining)
                     if idx_match:
                         group_idx = int(res := idx_match.group(0))
                         start_idx += len(res)
@@ -173,7 +189,7 @@ def selfies_to_graph_iterative(grammar,
                     if order_match:
                         bond_order = bond_char_to_order[order_match.group(0)]
                         start_idx += 1
-                    
+
                     ####### add group
                     group_name = symbol[start_idx:-1]
                     group = grammar.get_group(group_name)
@@ -185,38 +201,59 @@ def selfies_to_graph_iterative(grammar,
                     if not absolute:
                         prev_atom = mol.GetAtomWithIdx(prev)
                         prev_parent = prev_atom
-                        if (bond_order := min(state, bond_order, group.attachment_valency(group_idx))): #add group only if possible
+                        if bond_order := min(
+                            state, bond_order, group.attachment_valency(group_idx)
+                        ):  # add group only if possible
                             atom_map_num = dummy_counter.get()
                             if not att:
-                                dummy = Chem.Atom('*')
+                                dummy = Chem.Atom("*")
                                 dummy.SetAtomMapNum(atom_map_num)
                                 mol.AddAtom(dummy)
-                                b_idx = mol.AddBond(prev, mol.GetNumAtoms()-1, bond_types[bond_order])
+                                b_idx = mol.AddBond(
+                                    prev, mol.GetNumAtoms() - 1, bond_types[bond_order]
+                                )
                             else:
                                 prev_parent = prev_atom.GetNeighbors()[0]
                                 prev_atom.SetAtomMapNum(atom_map_num)
-                                prev_atom.GetBonds()[0].SetBondType(bond_types[bond_order])
+                                prev_atom.GetBonds()[0].SetBondType(
+                                    bond_types[bond_order]
+                                )
                         else:
                             continue
                         set_id(prev_parent, atom_map_num)
-                        prev_parent.SetProp(f'bond_dir{atom_map_num}', str(bond_dir))
+                        prev_parent.SetProp(f"bond_dir{atom_map_num}", str(bond_dir))
 
                     # === add the group atoms and bonds ===
                     previous_size = mol.GetNumAtoms()
                     mol.InsertMol(group.mol)
                     if not absolute:
-                        mol.GetAtomWithIdx(previous_size + group.attachment_points[group_idx]).SetAtomMapNum(atom_map_num)
-                        att_global_idx = previous_size + group.attachment_points[group_idx]
-                        parent_global_idx = previous_size + group.parent_map[group.attachment_points[group_idx]]
-                        
+                        mol.GetAtomWithIdx(
+                            previous_size + group.attachment_points[group_idx]
+                        ).SetAtomMapNum(atom_map_num)
+                        att_global_idx = (
+                            previous_size + group.attachment_points[group_idx]
+                        )
+                        parent_global_idx = (
+                            previous_size
+                            + group.parent_map[group.attachment_points[group_idx]]
+                        )
+
                         att_parent = mol.GetAtomWithIdx(parent_global_idx)
                         set_id(att_parent, atom_map_num)
-                        att_parent.SetProp(f'bond_dir{atom_map_num}', str(INVERT_DIR[bond_dir]))
+                        att_parent.SetProp(
+                            f"bond_dir{atom_map_num}", str(INVERT_DIR[bond_dir])
+                        )
 
-                        att_bond = mol.GetBondBetweenAtoms(previous_size + group.attachment_points[group_idx], previous_size + group.parent_map[group.attachment_points[group_idx]])
+                        att_bond = mol.GetBondBetweenAtoms(
+                            previous_size + group.attachment_points[group_idx],
+                            previous_size
+                            + group.parent_map[group.attachment_points[group_idx]],
+                        )
                         att_bond.SetBondType(bond_types[bond_order])
 
-                    member_idxs = [i+previous_size for i in range(group.mol.GetNumAtoms())]
+                    member_idxs = [
+                        i + previous_size for i in range(group.mol.GetNumAtoms())
+                    ]
                     for i, att in enumerate(group.attachment_points):
                         if member_idxs[att] not in place_from_idx:
                             place_from_idx[member_idxs[att]] = len(place_from_idx)
@@ -230,16 +267,16 @@ def selfies_to_graph_iterative(grammar,
 
                 elif "ch" == symbol[-3:-1]:
                     # Subcase 0.1: Branch symbol (e.g. [Branch])
-                    if (att or state <= 1): 
+                    if att or state <= 1:
                         continue
                     btype = process_branch_symbol(symbol)
                     if btype is None:
                         _raise_decoder_error(selfies, symbol)
-                    
+
                     binit_state, next_state = next_branch_state(btype, state)
                     stack.append((prev, next_state, att, *additional_info))
                     new_state = (prev, binit_state, att, *additional_info)
-                    
+
                 elif "ng" == symbol[-4:-2]:
                     # Subcase 0.2: Ring symbol (e.g. [Ring2])
                     output = process_ring_symbol(symbol)
@@ -265,13 +302,16 @@ def selfies_to_graph_iterative(grammar,
                         else:
                             lookup = Q + 1
                         ridx = prev
-                        lplace = min(max(place_from_idx[ridx] - lookup, 0), len(place_from_idx)-1)
+                        lplace = min(
+                            max(place_from_idx[ridx] - lookup, 0),
+                            len(place_from_idx) - 1,
+                        )
                         lidx = inverse_place[lplace]
                         # ridx and lidx are atom indices
                         # ring bond is from lidx <- ridx
                         rings.append((prev, lidx, bond_info))
                         new_state = (prev, next_state, att, *additional_info)
-                        
+
                 elif "[epsilon]" == symbol:
                     # Subcase 0.3: [epsilon]
                     pass
@@ -283,50 +323,58 @@ def selfies_to_graph_iterative(grammar,
                     cap -= 0 if (atom.h_count is None) else atom.h_count
                     bond_order, next_state = next_atom_state(bond_order, cap, state)
                     new_at = Chem.Atom(atom.element)
-                    new_at.SetFormalCharge(atom.charge) 
+                    new_at.SetFormalCharge(atom.charge)
                     if atom.isotope:
                         new_at.SetIsotope(atom.isotope)
                     if atom.radical:
                         new_at.SetNumRadicalElectrons(atom.radical)
                     added_atom = mol.AddAtom(new_at)
-                    
+
                     if atom.h_count is not None:
                         mol.GetAtomWithIdx(added_atom).SetNumExplicitHs(atom.h_count)
                         mol.GetAtomWithIdx(added_atom).SetNoImplicit(True)
 
                     place_from_idx[added_atom] = len(place_from_idx)
                     inverse_place.append(added_atom)
-                    
+
                     if bond_order != 0:
                         atom_map_num = dummy_counter.get()
                         set_id(mol.GetAtomWithIdx(added_atom), atom_map_num)
-                        mol.GetAtomWithIdx(added_atom).SetProp(f'bond_dir{atom_map_num}', str(INVERT_DIR[bond_dir]))
+                        mol.GetAtomWithIdx(added_atom).SetProp(
+                            f"bond_dir{atom_map_num}", str(INVERT_DIR[bond_dir])
+                        )
                         prev_parent = mol.GetAtomWithIdx(prev)
                         # not the starting atom, so a previous bond exists
                         if not att:
-                            b_idx = mol.AddBond(prev, added_atom, bond_types[bond_order])
+                            b_idx = mol.AddBond(
+                                prev, added_atom, bond_types[bond_order]
+                            )
                         else:
                             prev_atom = mol.GetAtomWithIdx(prev)
                             prev_atom.SetAtomMapNum(atom_map_num)
 
                             prev_parent = prev_atom.GetNeighbors()[0]
 
-                            dummy = Chem.Atom('*')
+                            dummy = Chem.Atom("*")
                             dummy.SetAtomMapNum(atom_map_num)
                             dummy_idx = mol.AddAtom(dummy)
-                            b_idx = mol.AddBond(dummy_idx, added_atom, bond_types[bond_order])
+                            b_idx = mol.AddBond(
+                                dummy_idx, added_atom, bond_types[bond_order]
+                            )
                             b_prev = prev_atom.GetBonds()[0]
                             b_prev.SetBondType(bond_types[bond_order])
 
                         set_id(prev_parent, atom_map_num)
-                        prev_parent.SetProp(f'bond_dir{atom_map_num}', str(bond_dir))
+                        prev_parent.SetProp(f"bond_dir{atom_map_num}", str(bond_dir))
                     new_state = (added_atom, next_state, False)
             else:
                 # Case 1: Group
                 group = state
                 rel_idx = grammar.get_index_from_selfies(symbol)
                 member_idxs, inner_att = additional_info
-                possible_inner_att = find_next_available(inner_att, rel_idx, member_idxs, group.attachment_points)
+                possible_inner_att = find_next_available(
+                    inner_att, rel_idx, member_idxs, group.attachment_points
+                )
                 if possible_inner_att is None:
                     break
                 inner_att = possible_inner_att
@@ -339,14 +387,21 @@ def selfies_to_graph_iterative(grammar,
             stack.append(new_state)
     return mol
 
+
 def available_bonds(atom):
     atom.UpdatePropertyCache()
-    return get_bonding_capacity(atom.GetSymbol(), atom.GetFormalCharge()) - atom.GetExplicitValence()
+    return (
+        get_bonding_capacity(atom.GetSymbol(), atom.GetFormalCharge())
+        - atom.GetExplicitValence()
+    )
 
-def form_rings_bilocally_iterative(mol, rings, place_from_idx, inverse_place, dummy_counter, group_atom, verbose=False):
+
+def form_rings_bilocally_iterative(
+    mol, rings, place_from_idx, inverse_place, dummy_counter, group_atom, verbose=False
+):
     for ridx, lidx, bond_info in rings:
         # clamp lidx to inside the graph
-        lplace = min(place_from_idx[lidx], len(place_from_idx)-1)
+        lplace = min(place_from_idx[lidx], len(place_from_idx) - 1)
         lidx = min(lidx, inverse_place[lplace])
         if lidx == ridx:  # ring to the same atom forbidden
             continue
@@ -356,12 +411,12 @@ def form_rings_bilocally_iterative(mol, rings, place_from_idx, inverse_place, du
         ratom = mol.GetAtomWithIdx(ridx)
         cont = False
         for lr_atom, lr_idx in [(latom, lidx), (ratom, ridx)]:
-            if (lr_atom.GetSymbol() == '*' and lr_atom.GetAtomMapNum() != 0):
+            if lr_atom.GetSymbol() == "*" and lr_atom.GetAtomMapNum() != 0:
                 cont = True
                 break
         if cont:
             continue
-        if latom.GetSymbol() != '*' and ratom.GetSymbol() != '*':
+        if latom.GetSymbol() != "*" and ratom.GetSymbol() != "*":
             # atom to atom
             lfree = available_bonds(latom)
             rfree = available_bonds(ratom)
@@ -377,18 +432,18 @@ def form_rings_bilocally_iterative(mol, rings, place_from_idx, inverse_place, du
             else:
                 new_order = min(order + int(lr_bond.GetBondTypeAsDouble()), 3)
                 lr_bond.SetBondType(bond_types[new_order])
-            
+
             id_num = dummy_counter.get()
             set_id(latom, id_num)
             set_id(ratom, id_num)
-            latom.SetProp(f'bond_dir{id_num}', str(INVERT_DIR[lstereo]))
-            ratom.SetProp(f'bond_dir{id_num}', str(lstereo))
+            latom.SetProp(f"bond_dir{id_num}", str(INVERT_DIR[lstereo]))
+            ratom.SetProp(f"bond_dir{id_num}", str(lstereo))
 
-        elif [latom.GetSymbol(), ratom.GetSymbol()].count('*') == 1:
+        elif [latom.GetSymbol(), ratom.GetSymbol()].count("*") == 1:
             free = order
             attachment = 0
             for i, lr_atom in enumerate([latom, ratom]):
-                if lr_atom.GetSymbol() == '*':
+                if lr_atom.GetSymbol() == "*":
                     attachment = i
                     if lr_atom.GetIdx() in group_atom:
                         group_t, att_idx = group_atom[lr_atom.GetIdx()]
@@ -397,28 +452,29 @@ def form_rings_bilocally_iterative(mol, rings, place_from_idx, inverse_place, du
                     free = min(available_bonds(lr_atom), free)
             if free <= 0:
                 continue
-            dummy = Chem.Atom('*')
+            dummy = Chem.Atom("*")
             atom_map_num = dummy_counter.get()
             dummy.SetAtomMapNum(atom_map_num)
             mol.AddAtom(dummy)
             att_atom = [latom, ratom][attachment]
-            normal_atom = [latom, ratom][1-attachment]
+            normal_atom = [latom, ratom][1 - attachment]
             att_parent = att_atom.GetNeighbors()[0]
-            
-            set_id(att_parent, atom_map_num)
-            att_parent.SetProp(f'bond_dir{atom_map_num}', str(INVERT_DIR[lstereo] if attachment == 0 else lstereo))
-            set_id(normal_atom, atom_map_num)
-            normal_atom.SetProp(f'bond_dir{atom_map_num}', str(INVERT_DIR[lstereo] if attachment == 1 else lstereo))
 
-            if attachment == 0:
-                formed = mol.AddBond(ridx, mol.GetNumAtoms()-1, bond_types[free])
-            else:
-                formed = mol.AddBond(mol.GetNumAtoms()-1, lidx, bond_types[free])
-            
+            set_id(att_parent, atom_map_num)
+            att_parent.SetProp(
+                f"bond_dir{atom_map_num}",
+                str(INVERT_DIR[lstereo] if attachment == 0 else lstereo),
+            )
+            set_id(normal_atom, atom_map_num)
+            normal_atom.SetProp(
+                f"bond_dir{atom_map_num}",
+                str(INVERT_DIR[lstereo] if attachment == 1 else lstereo),
+            )
+
             att_atom.GetBonds()[0].SetBondType(bond_types[free])
             att_atom.SetAtomMapNum(atom_map_num)
-            
-        else:            
+
+        else:
             free = order
             for lr_atom in [latom, ratom]:
                 if lr_atom.GetIdx() in group_atom:
@@ -426,18 +482,21 @@ def form_rings_bilocally_iterative(mol, rings, place_from_idx, inverse_place, du
                     free = min(free, group_t.attachment_valency(att_idx))
             atom_map_num = dummy_counter.get()
 
-            l_parent, r_parent = [lr_atom.GetNeighbors()[0] for lr_atom in [latom, ratom]]
+            l_parent, r_parent = [
+                lr_atom.GetNeighbors()[0] for lr_atom in [latom, ratom]
+            ]
             set_id(l_parent, atom_map_num)
             set_id(r_parent, atom_map_num)
 
-            l_parent.SetProp(f'bond_dir{atom_map_num}', str(INVERT_DIR[lstereo]))
-            r_parent.SetProp(f'bond_dir{atom_map_num}', str(lstereo))
+            l_parent.SetProp(f"bond_dir{atom_map_num}", str(INVERT_DIR[lstereo]))
+            r_parent.SetProp(f"bond_dir{atom_map_num}", str(lstereo))
 
             latom.SetAtomMapNum(atom_map_num)
             ratom.SetAtomMapNum(atom_map_num)
             latom.GetBonds()[0].SetBondType(bond_types[free])
             ratom.GetBonds()[0].SetBondType(bond_types[free])
-            
+
+
 def group_decoder(grammar, selfies, verbose=False):
     if not selfies:
         return Chem.Mol()
@@ -456,22 +515,30 @@ def group_decoder(grammar, selfies, verbose=False):
             place_from_idx=place_from_idx,
             inverse_place=inverse_place,
             verbose=verbose,
-            group_atom=group_atom
+            group_atom=group_atom,
         )
 
-        form_rings_bilocally_iterative(mol, rings, place_from_idx, inverse_place, dummy_counter, group_atom, verbose=verbose)
+        form_rings_bilocally_iterative(
+            mol,
+            rings,
+            place_from_idx,
+            inverse_place,
+            dummy_counter,
+            group_atom,
+            verbose=verbose,
+        )
         try:
             mol.UpdatePropertyCache()
             Chem.AssignStereochemistry(mol, force=True)
         except:
-            raise ValueError('Issue assigning double bond stereochem')
+            raise ValueError("Issue assigning double bond stereochem")
 
         remove_maps = []
         atom_pair = set()
         map_idx = dict()
         # remove multiple bonds between the same pairs of atoms
         # assumes that mapped atoms are attachment points + map indices only used once
-        at_map = defaultdict(int) # cache of atom maps
+        at_map = defaultdict(int)  # cache of atom maps
         for at_idx, atom in enumerate(mol.GetAtoms()):
             if map_num := atom.GetAtomMapNum():
                 at_map[at_idx] = map_num
@@ -479,7 +546,11 @@ def group_decoder(grammar, selfies, verbose=False):
                 if map_num in map_idx:
                     att_idx, parent_idx = map_idx[map_num]
                     to_add = tuple(sorted([parent_idx, neighbor]))
-                    if (to_add in atom_pair) or (mol.GetBondBetweenAtoms(parent_idx, neighbor) is not None) or (parent_idx == neighbor):
+                    if (
+                        (to_add in atom_pair)
+                        or (mol.GetBondBetweenAtoms(parent_idx, neighbor) is not None)
+                        or (parent_idx == neighbor)
+                    ):
                         remove_maps.extend([att_idx, at_idx])
                     else:
                         atom_pair.add(to_add)
@@ -488,16 +559,26 @@ def group_decoder(grammar, selfies, verbose=False):
 
         for idx in remove_maps:
             at_map[idx] = 0
-            mol.GetAtomWithIdx(idx).SetAtomMapNum(0) 
+            mol.GetAtomWithIdx(idx).SetAtomMapNum(0)
 
         # zip molecule together sequentially to preserve stereochemistry
 
         frag_atom = []
-        frags = Chem.GetMolFrags(mol, asMols=True, sanitizeFrags=False, fragsMolAtomMapping=frag_atom)
+        frags = Chem.GetMolFrags(
+            mol, asMols=True, sanitizeFrags=False, fragsMolAtomMapping=frag_atom
+        )
         if len(frags) == 0:
             res = Chem.RWMol(Chem.molzip(mol))
         else:
-            frags = [(frag, set([res for at_idx in frag_atom[i] if (res := at_map[at_idx]) != 0])) for i, frag in enumerate(frags)]
+            frags = [
+                (
+                    frag,
+                    set(
+                        [res for at_idx in frag_atom[i] if (res := at_map[at_idx]) != 0]
+                    ),
+                )
+                for i, frag in enumerate(frags)
+            ]
             first = frags.pop(0)
             res = first[0]
             running_set = first[1]
@@ -524,22 +605,21 @@ def group_decoder(grammar, selfies, verbose=False):
             except:
                 res = Chem.RWMol(res)
         # use batch edit to avoid stereochemistry loss
-        idxs = []
         res.BeginBatchEdit()
         parents = {}
         for idx, atom in enumerate(res.GetAtoms()):
-            if atom.GetSymbol() == '*':
+            if atom.GetSymbol() == "*":
                 if (neigh := atom.GetNeighbors()[0]).GetIdx() not in parents:
                     parents[neigh.GetIdx()] = [neigh, 0]
                 parents[neigh.GetIdx()][1] += 1
                 res.RemoveAtom(idx)
-        res.CommitBatchEdit()  
+        res.CommitBatchEdit()
 
         # set bond dirs correctly
         bonds = defaultdict(list)
         for atom in res.GetAtoms():
-            if atom.HasProp('id'):
-                for idx in atom.GetProp('id').split(','):
+            if atom.HasProp("id"):
+                for idx in atom.GetProp("id").split(","):
                     bonds[idx].append(atom)
 
         for b_idx, ats in bonds.items():
@@ -550,9 +630,9 @@ def group_decoder(grammar, selfies, verbose=False):
             if b is None:
                 continue
             if b.GetBeginAtomIdx() == a1.GetIdx():
-                b.SetBondDir(BOND_DIR[a1.GetProp(f'bond_dir{b_idx}')])
+                b.SetBondDir(BOND_DIR[a1.GetProp(f"bond_dir{b_idx}")])
             else:
-                b.SetBondDir(BOND_DIR[a2.GetProp(f'bond_dir{b_idx}')])
+                b.SetBondDir(BOND_DIR[a2.GetProp(f"bond_dir{b_idx}")])
 
         for parent, count in parents.values():
             parent.SetNumExplicitHs(parent.GetNumExplicitHs() + count)
@@ -564,4 +644,4 @@ def group_decoder(grammar, selfies, verbose=False):
         return res
     except Exception as e:
         print(e)
-        raise ValueError(f'CAN NOT DECODE {selfies}')
+        raise ValueError(f"CAN NOT DECODE {selfies}")

@@ -1,15 +1,13 @@
-import functools
-import itertools
 import re
 from typing import Any, List, Optional, Tuple
 
-from group_selfies.constants import (
+from psymodtraining.group_selfies.constants import (
     ELEMENTS,
     INDEX_ALPHABET,
     INDEX_CODE,
-    ORGANIC_SUBSET
+    ORGANIC_SUBSET,
 )
-from group_selfies.group_mol_graph import Atom
+from psymodtraining.group_selfies.group_mol_graph import Atom
 
 
 def process_atom_symbol(symbol: str) -> Optional[Tuple[Any, Atom]]:
@@ -38,7 +36,7 @@ def process_ring_symbol(symbol: str) -> Optional[Tuple[int, int, Any]]:
 
 
 def next_atom_state(
-        bond_order: int, bond_cap: int, state: int
+    bond_order: int, bond_cap: int, state: int
 ) -> Tuple[int, Optional[int]]:
     if state == 0:
         bond_order = 0
@@ -48,9 +46,7 @@ def next_atom_state(
     return bond_order, next_state
 
 
-def next_branch_state(
-        branch_type: int, state: int
-) -> Tuple[int, Optional[int]]:
+def next_branch_state(branch_type: int, state: int) -> Tuple[int, Optional[int]]:
     assert 1 <= branch_type <= 3
     assert state > 1
 
@@ -59,9 +55,7 @@ def next_branch_state(
     return branch_init_state, next_state
 
 
-def next_ring_state(
-        ring_type: int, state: int
-) -> Tuple[int, Optional[int]]:
+def next_ring_state(ring_type: int, state: int) -> Tuple[int, Optional[int]]:
     assert state > 0
 
     bond_order = min(ring_type, state)
@@ -104,7 +98,7 @@ SELFIES_ATOM_PATTERN = re.compile(
     r"([@]{0,2})"  # chiral_tag (optional, only @ and @@ supported)
     r"((?:[H]\d)?)"  # H count (optional, e.g. H1, H3)
     r"((?:[+-][1-9]+)?)"  # charge (optional, e.g. +1)
-    r"((?:[R]\d)?)" #radical count (optional)
+    r"((?:[R]\d)?)"  # radical count (optional)
     r"[]]$"  # closing square bracket ]
 )
 
@@ -114,20 +108,24 @@ bond_char_to_order = {
     "#": 3,
 }
 
+
 def _process_atom_symbol_no_cache(symbol):
     m = SELFIES_ATOM_PATTERN.match(symbol)
     assert m is not None, f"{symbol} did not match any atom type"
     bond_char, isotope, element, chirality, h_count, charge, radical = m.groups()
     bond_dir = None
-    dirs = ['\\', '/']
+    dirs = ["\\", "/"]
     for dire in dirs:
         if dire in bond_char:
             bond_dir = dire
-            bond_char = bond_char.replace(dire, '')
+            bond_char = bond_char.replace(dire, "")
             break
     bond_order = bond_char_to_order[bond_char]
     atom = Atom(element, charge)
-    if symbol[1 + len(bond_char) + (len(bond_dir) if bond_dir is not None else 0): -1] in ORGANIC_SUBSET:
+    if (
+        symbol[1 + len(bond_char) + (len(bond_dir) if bond_dir is not None else 0) : -1]
+        in ORGANIC_SUBSET
+    ):
         atom = Atom(element=element)
         return bond_order, bond_dir, atom
     isotope = None if (isotope == "") else int(isotope)
@@ -158,15 +156,56 @@ def _process_atom_symbol_no_cache(symbol):
     )
     return bond_order, bond_dir, atom
 
+
 def _build_atom_cache():
     cache = dict()
     common_symbols = [
-        "[#C+1]", "[#C-1]", "[#C]", "[#N+1]", "[#N]", "[#O+1]", "[#P+1]",
-        "[#P-1]", "[#P]", "[#S+1]", "[#S-1]", "[#S]", "[=C+1]", "[=C-1]",
-        "[=C]", "[=N+1]", "[=N-1]", "[=N]", "[=O+1]", "[=O]", "[=P+1]",
-        "[=P-1]", "[=P]", "[=S+1]", "[=S-1]", "[=S]", "[Br]", "[C+1]", "[C-1]",
-        "[C]", "[Cl]", "[F]", "[H]", "[I]", "[N+1]", "[N-1]", "[N]", "[O+1]",
-        "[O-1]", "[O]", "[P+1]", "[P-1]", "[P]", "[S+1]", "[S-1]", "[S]"
+        "[#C+1]",
+        "[#C-1]",
+        "[#C]",
+        "[#N+1]",
+        "[#N]",
+        "[#O+1]",
+        "[#P+1]",
+        "[#P-1]",
+        "[#P]",
+        "[#S+1]",
+        "[#S-1]",
+        "[#S]",
+        "[=C+1]",
+        "[=C-1]",
+        "[=C]",
+        "[=N+1]",
+        "[=N-1]",
+        "[=N]",
+        "[=O+1]",
+        "[=O]",
+        "[=P+1]",
+        "[=P-1]",
+        "[=P]",
+        "[=S+1]",
+        "[=S-1]",
+        "[=S]",
+        "[Br]",
+        "[C+1]",
+        "[C-1]",
+        "[C]",
+        "[Cl]",
+        "[F]",
+        "[H]",
+        "[I]",
+        "[N+1]",
+        "[N-1]",
+        "[N]",
+        "[O+1]",
+        "[O-1]",
+        "[O]",
+        "[P+1]",
+        "[P-1]",
+        "[P]",
+        "[S+1]",
+        "[S-1]",
+        "[S]",
     ]
 
     for symbol in common_symbols:
@@ -192,7 +231,7 @@ def _build_ring_cache():
             cache[symbol] = (order, L, (None, None))
 
         # [-/RingL], [\/RingL], [\-RingL], ...
-        for stereochar in ['/', '\\']:
+        for stereochar in ["/", "\\"]:
             symbol = "[{}Ring{}]".format(stereochar, L)
             cache[symbol] = (1, L, (stereochar, stereochar))
     return cache

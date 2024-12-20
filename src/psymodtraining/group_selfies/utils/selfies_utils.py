@@ -37,11 +37,11 @@ def split_selfies(selfies: str) -> Iterator[str]:
         if right_idx == -1:
             raise ValueError("malformed SELFIES string, hanging '[' bracket")
 
-        next_symbol = selfies[left_idx: right_idx + 1]
+        next_symbol = selfies[left_idx : right_idx + 1]
         yield next_symbol
 
         left_idx = right_idx + 1
-        if selfies[left_idx: left_idx + 1] == ".":
+        if selfies[left_idx : left_idx + 1] == ".":
             yield "."
             left_idx += 1
 
