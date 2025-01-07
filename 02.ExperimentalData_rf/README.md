@@ -91,11 +91,31 @@ steps:
 - 4. Questions
     - how to compare which one is better, a or b?
     - why those metrics, what information can i get?
-    - Since I use optuna to choose hyperparameters, when optimizing, it considers the mean value of all receptors. Different receptors may have different the best hyperparameters. Therefore, I choose to build the model only for 5-HT2A (c). 
-
-## c.random forest - 5-HT2A
+    - Since I use optuna to choose hyperparameters, when optimizing, it considers the mean value of all receptors. Different receptors may have different the best hyperparameters. Therefore, I choose to build the model only for 5-HT6 (c). 
 
 
-## (d.lasso regression)
+## c.Random Forest Classification - 5-HT6
+steps:
+- 1. Data preparation
+    - read fingerprint file and experiment data file
+    - binarize the experiment data file
+    - merge features and targets -> to ensure the features and labels match based on drugs
+    - only leave 5HT6 as target -> because 5HT6 is less imbalanced
 
+- 2. Training
+    - Methods introduction:
+        - Random Forest Classification
+        - Nested CV
+        - Optuna
+
+
+    -  Random Forest Classification  + Nested CV
+        - 5-fold for both inner and outer cv
+        - optuna optimization is based on accuracy
+
+
+- 3. Evaluation
+    - accuracy
+    - f1
+    - roc
 
