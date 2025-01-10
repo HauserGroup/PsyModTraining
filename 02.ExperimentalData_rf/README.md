@@ -93,6 +93,28 @@ steps:
     - why those metrics, what information can i get?
     - Since I use optuna to choose hyperparameters, when optimizing, it considers the mean value of all receptors. Different receptors may have different the best hyperparameters. Therefore, I choose to build the model only for 5-HT6 (c). 
 
+## b'. Real Value Random Forest Threshold
+Almost the same as b
+- 2. Training
+    - Methods introduction:
+        - Multioutput Random Forest Regression 
+        - Nested CV
+        - Optuna
+
+    - Multioutput Random Forest Regression  + Nested CV
+        - 5-fold for both inner and outer cv
+        - model train on real value but evaluation is based on the accuracy of predicting labels. Transform the predicted values to bits based on threshold
+        - optuna optimization is based on hamming loss of each cv fold
+        - optimize threshold 
+
+- 3. Evaluation
+    - hamming loss but transformed the values to labels based on threshold
+
+- 4. Questions  
+    - how to set the range of threshold?
+    - compare results to multilabel
+
+
 
 ## c.Random Forest Classification - 5-HT6
 steps:
