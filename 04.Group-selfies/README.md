@@ -29,10 +29,29 @@ Apply gsf on chembl data to predict whether molecules can active 5HT2A
 
 steps:
 - 1. Data Preparation
-    - process pChEMBL_data.csv -> remove "not determined"
-        - psy = 314
-        - non-psy = 946 -> imbalanced?
+    - process pChEMBL_data.csv -> remove "not determined", remove duplicates
+        - psy = 277
+        - non-psy = 563 -> imbalanced?
     - autofragmentation on all chembl using mmpa
         - why use mmpa: 
     - fragment chembl
-    - one-hot encoding
+    - one-hot encoding for fragments of each molecules
+
+- 2. Models
+    - gsf-Single Label
+        - autofragmentation on all chembl using mmpa
+            - why use mmpa: 
+        - fragment chembl
+         - one-hot encoding for fragments of each molecules
+        - binarize the target with Threshold = 0
+        - StratifiedKFold, nested CV
+    
+    - MACCS-Single Label
+        same model but change input
+
+
+
+
+    
+
+
