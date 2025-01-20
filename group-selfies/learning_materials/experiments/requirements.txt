@@ -1,5 +1,0 @@
-selfies
-PyTDC
-requests
-molplotly
-pathos

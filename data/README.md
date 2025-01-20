@@ -1,5 +1,11 @@
 # Data sources
 
+## ExperimentData
+** remember to change all "Bromo-dragonFLY" to "Bromo-DragonFLY" before running codes in ExperimentData folder
+
+ - `43_Psychedelic_drug_SMILES_Category.csv`: 43 psychedelic drugs with SMILES and Categories (Lysergamide, Phenethylamine, Tryptamine, Unknown)
+ - `psychedelics_all_fingerprints.csv`: ~250 psychoactive molecules with SMILES and Categories and other info
+
 ## Shulgin/
 
  - `legend.txt`, `phenthylamines.txt` are from `pihkal.review.txt` sourced from [Erowid](https://erowid.org/library/books_online/pihkal/pihkal.shtml). Same for `rating_scale.txt`
