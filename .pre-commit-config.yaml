@@ -1,7 +1,7 @@
 repos:
   # Basic code quality checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace         # Removes trailing whitespace from lines
       - id: end-of-file-fixer           # Ensures the file ends with a newline
@@ -10,19 +10,19 @@ repos:
 
   # Code formatter (Black)
   - repo: https://github.com/psf/black
-    rev: 23.9.1
+    rev: 25.1.0
     hooks:
       - id: black                       # Automatically formats Python code
 
   # Import sorting tool (isort)
   - repo: https://github.com/pre-commit/mirrors-isort
-    rev: main
+    rev: v5.10.1
     hooks:
       - id: isort                       # Automatically sorts Python imports
 
   # Code style checks (Flake8)
   - repo: https://github.com/PyCQA/flake8
-    rev: 6.1.0
+    rev: 7.3.0
     hooks:
       - id: flake8                      # Ensures compliance with PEP8
         args: [--max-line-length=88]    # Sets max line length to 88 (consistent with Black)
